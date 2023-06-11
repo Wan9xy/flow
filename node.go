@@ -92,10 +92,6 @@ func (n *DbNode) toNode() Node {
 	}
 }
 
-func (n *DbNode) TableName() string {
-	return "t_node"
-}
-
 type Edge struct {
 	Cond string
 	To   string

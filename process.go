@@ -9,20 +9,22 @@ import (
 // 流程是由节点组成的，节点之间通过边连接
 type Process struct {
 	gorm.Model
-	Name      string
-	UUID      string
-	Enable    bool
-	Nodes     NodeArray
-	ExpectEnd bool
-	StartJump bool
+	Name        string
+	UUID        string
+	Enable      bool
+	Nodes       NodeArray
+	AlwaysNodes NodeArray
+	ExpectEnd   bool
+	StartJump   bool
 }
 
-func NewProcess(name string, nodes []Node, expectEnd bool, startJump bool) *Process {
+func NewProcess(name string, nodes, alwaysNodes []Node, expectEnd bool, startJump bool) *Process {
 	p := &Process{
-		Name:      name,
-		Nodes:     nodes,
-		ExpectEnd: expectEnd,
-		StartJump: startJump,
+		Name:        name,
+		Nodes:       nodes,
+		AlwaysNodes: alwaysNodes,
+		ExpectEnd:   expectEnd,
+		StartJump:   startJump,
 	}
 	p.UUID = uuid.New().String()
 	db.Create(p)

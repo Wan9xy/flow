@@ -12,12 +12,13 @@ import (
 // 流程事件是由节点组成的，节点之间通过边连接，其中ExpectEnd表示是否允许流程异常结束，StartJump表示是否允许流程跳回开始节点
 type Event struct {
 	gorm.Model
-	UUID      string
-	ProcessID string
-	Nodes     NodeArray
-	ExpectEnd bool
-	StartJump bool
-	NowAt     string
+	UUID        string
+	ProcessID   string
+	Nodes       NodeArray
+	AlwaysNodes NodeArray
+	ExpectEnd   bool
+	StartJump   bool
+	NowAt       string
 }
 
 func (e *Event) TableName() string {
@@ -64,10 +65,11 @@ func EventStart(process Process) (event *Event, node *Node, err error) {
 		}
 	}
 	event = &Event{
-		ProcessID: process.UUID,
-		Nodes:     process.Nodes,
-		ExpectEnd: process.ExpectEnd,
-		StartJump: process.StartJump,
+		ProcessID:   process.UUID,
+		Nodes:       process.Nodes,
+		AlwaysNodes: process.AlwaysNodes,
+		ExpectEnd:   process.ExpectEnd,
+		StartJump:   process.StartJump,
 	}
 	event.UUID = uuid.New().String()
 	event.NowAt = event.Nodes[0].Name
@@ -90,6 +92,7 @@ func EventTransfer(uuid string, action string) (node *Node, err error) {
 		return nil, errors.New("event is end")
 	}
 	to := ""
+	// 优先查找当前节点的边
 	for _, n := range event.Nodes {
 		if n.Name == event.NowAt {
 			for _, e := range n.Edges {
@@ -99,6 +102,18 @@ func EventTransfer(uuid string, action string) (node *Node, err error) {
 			}
 		}
 	}
+	//// 其次查找always节点的边
+	//if to == "" {
+	//	for _, n := range event.AlwaysNodes {
+	//		if n.Name == event.NowAt {
+	//			for _, e := range n.Edges {
+	//				if e.Cond == action {
+	//					to = e.To
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
 	if to != "" {
 		for _, n := range event.Nodes {
 			if n.Name == to {
@@ -118,5 +133,6 @@ func EventTransfer(uuid string, action string) (node *Node, err error) {
 		db.Save(&event)
 		return
 	}
+
 	return nil, errors.New("no edge found")
 }

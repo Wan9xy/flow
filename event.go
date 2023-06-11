@@ -24,6 +24,7 @@ func (e *Event) TableName() string {
 	return "t_event"
 }
 
+// EventStart 创建一个新的流程事件
 func EventStart(process Process) (event *Event, node *Node, err error) {
 	if process.Nodes == nil || len(process.Nodes) == 0 {
 		err = errors.New("process has no node")
@@ -37,9 +38,6 @@ func EventStart(process Process) (event *Event, node *Node, err error) {
 		err = errors.New("process last node must be end")
 		return
 	}
-	process.Nodes = append(process.Nodes, Node{
-		Name: "expect_end",
-	})
 	if process.ExpectEnd {
 		for i, n := range process.Nodes {
 			if n.Name == "end" {
@@ -51,9 +49,12 @@ func EventStart(process Process) (event *Event, node *Node, err error) {
 			})
 		}
 	}
+	process.Nodes = append(process.Nodes, Node{
+		Name: "expect_end",
+	})
 	if process.StartJump {
 		for i, n := range process.Nodes {
-			if n.Name == "start" {
+			if n.Name == "start" || n.Name == "end" || n.Name == "expect_end" {
 				continue
 			}
 			process.Nodes[i].Edges = append(n.Edges, Edge{
@@ -81,9 +82,13 @@ func EventStart(process Process) (event *Event, node *Node, err error) {
 	return
 }
 
+// EventTransfer 事件流转
 func EventTransfer(uuid string, action string) (node *Node, err error) {
 	var event Event
 	db.Where("uuid = ?", uuid).First(&event)
+	if event.NowAt == "end" || event.NowAt == "expect_end" {
+		return nil, errors.New("event is end")
+	}
 	to := ""
 	for _, n := range event.Nodes {
 		if n.Name == event.NowAt {

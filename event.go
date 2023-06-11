@@ -1,33 +1,117 @@
 package flow
 
 import (
+	"errors"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"log"
 )
 
+// Event 流程事件
+// 流程事件是流程的运行实例，每个流程事件都有一个唯一的UUID，用于标识
+// 流程事件是由节点组成的，节点之间通过边连接，其中ExpectEnd表示是否允许流程异常结束，StartJump表示是否允许流程跳回开始节点
 type Event struct {
-	//gorm.Model
+	gorm.Model
 	UUID      string
 	ProcessID string
-	Nodes     []Node
+	Nodes     NodeArray
 	ExpectEnd bool
 	StartJump bool
+	NowAt     string
 }
 
-func EventStart(process Process) (event *Event, node *Node, error error) {
-	e := &Event{
+func (e *Event) TableName() string {
+	return "t_event"
+}
+
+func EventStart(process Process) (event *Event, node *Node, err error) {
+	if process.Nodes == nil || len(process.Nodes) == 0 {
+		err = errors.New("process has no node")
+		return
+	}
+	if process.Nodes[0].Name != "start" {
+		err = errors.New("process first node must be start")
+		return
+	}
+	if process.Nodes[len(process.Nodes)-1].Name != "end" && !process.ExpectEnd {
+		err = errors.New("process last node must be end")
+		return
+	}
+	process.Nodes = append(process.Nodes, Node{
+		Name: "expect_end",
+	})
+	if process.ExpectEnd {
+		for i, n := range process.Nodes {
+			if n.Name == "end" {
+				continue
+			}
+			process.Nodes[i].Edges = append(n.Edges, Edge{
+				To:   "expect_end",
+				Cond: "expect_end",
+			})
+		}
+	}
+	if process.StartJump {
+		for i, n := range process.Nodes {
+			if n.Name == "start" {
+				continue
+			}
+			process.Nodes[i].Edges = append(n.Edges, Edge{
+				To:   "start",
+				Cond: "restart",
+			})
+		}
+	}
+	event = &Event{
 		ProcessID: process.UUID,
 		Nodes:     process.Nodes,
 		ExpectEnd: process.ExpectEnd,
 		StartJump: process.StartJump,
 	}
-	e.UUID = uuid.New().String()
-	ctx := Context{
-		Event: e,
+	event.UUID = uuid.New().String()
+	event.NowAt = event.Nodes[0].Name
+	db.Create(event)
+	node = &event.Nodes[0]
+	go func() {
+		err = node.Run(Context{})
+		if err != nil {
+			log.Printf("[warning] node %s action run error: %s, event_id is %s", node.Name, err.Error(), event.UUID)
+		}
+	}()
+	return
+}
+
+func EventTransfer(uuid string, action string) (node *Node, err error) {
+	var event Event
+	db.Where("uuid = ?", uuid).First(&event)
+	to := ""
+	for _, n := range event.Nodes {
+		if n.Name == event.NowAt {
+			for _, e := range n.Edges {
+				if e.Cond == action {
+					to = e.To
+				}
+			}
+		}
 	}
-	node = NodeNew(e.Nodes[0].Hook, e.Nodes[0].Action)
-	err := node.Run(ctx)
-	if err != nil {
-		return nil, nil, err
+	if to != "" {
+		for _, n := range event.Nodes {
+			if n.Name == to {
+				go func() {
+					err = n.Run(Context{
+						EventUUID: uuid,
+						Node:      n,
+					})
+					if err != nil {
+						log.Printf("[warning] node %s action run error: %s, event_id is %s", n.Name, err.Error(), event.UUID)
+					}
+				}()
+				node = &n
+			}
+		}
+		event.NowAt = to
+		db.Save(&event)
+		return
 	}
-	return e, node, nil
+	return nil, errors.New("no edge found")
 }
